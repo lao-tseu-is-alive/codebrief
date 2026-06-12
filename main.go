@@ -119,8 +119,9 @@ func cmdIndex(parsePath string) {
 	fmt.Fprintf(os.Stderr, "Saved to %s\n", indexFile)
 }
 
-// cmdQuery loads ai-index.json, embeds queryText via OpenAI, and prints the top-5
-// chunks ranked by cosine similarity.
+// cmdQuery loads ai-index.json, embeds queryText, and retrieves the top-5 chunks
+// by cosine similarity. If LLM_QUERY_MODEL is set, the chunks are passed as context
+// to that Ollama model which streams a generated answer; otherwise the raw chunks are printed.
 func cmdQuery(queryText string) {
 	idx, err := loadIndex(indexFile)
 	if err != nil {
@@ -141,6 +142,20 @@ func cmdQuery(queryText string) {
 	}
 
 	results := queryIndex(idx, vecs[0], 5)
+
+	if model := os.Getenv("LLM_QUERY_MODEL"); model != "" {
+		host := os.Getenv("OLLAMA_HOST")
+		if host == "" {
+			host = "http://localhost:11434"
+		}
+		fmt.Fprintf(os.Stderr, "Generating answer with %s...\n", model)
+		if err := generateAnswer(queryText, results, model, host); err != nil {
+			fmt.Fprintf(os.Stderr, "Generation failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	fmt.Printf("Top results for: %q\n\n", queryText)
 	for i, c := range results {
 		fmt.Printf("--- %d ---\n%s\n\n", i+1, c.Text)

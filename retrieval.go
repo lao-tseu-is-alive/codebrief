@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -348,4 +349,68 @@ func cosine(a, b []float32) float32 {
 		return 0
 	}
 	return float32(dot / (math.Sqrt(normA) * math.Sqrt(normB)))
+}
+
+// generateAnswer sends the retrieved chunks as context to LLM_QUERY_MODEL via the
+// Ollama /api/chat endpoint and streams the generated answer to stdout.
+func generateAnswer(query string, chunks []Chunk, model, host string) error {
+	type message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	type request struct {
+		Model    string    `json:"model"`
+		Messages []message `json:"messages"`
+		Stream   bool      `json:"stream"`
+	}
+	type responseChunk struct {
+		Message message `json:"message"`
+		Done    bool    `json:"done"`
+	}
+
+	var ctx strings.Builder
+	for i, c := range chunks {
+		fmt.Fprintf(&ctx, "--- %d ---\n%s\n\n", i+1, c.Text)
+	}
+
+	body, _ := json.Marshal(request{
+		Model: model,
+		Messages: []message{
+			{Role: "system", Content: "You are a code assistant. Answer the user's question using only the following code context.\n\n" + ctx.String()},
+			{Role: "user", Content: query},
+		},
+		Stream: true,
+	})
+
+	req, err := http.NewRequest("POST", host+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("Ollama unreachable at %s: %w", host, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errBody map[string]any
+		json.NewDecoder(resp.Body).Decode(&errBody)
+		return fmt.Errorf("Ollama API error %d: %v", resp.StatusCode, errBody)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		var chunk responseChunk
+		if err := json.Unmarshal(scanner.Bytes(), &chunk); err != nil {
+			continue
+		}
+		fmt.Print(chunk.Message.Content)
+		if chunk.Done {
+			fmt.Println()
+			break
+		}
+	}
+	return scanner.Err()
 }
