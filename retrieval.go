@@ -19,10 +19,17 @@ type Chunk struct {
 	Metadata map[string]string `json:"metadata"`
 }
 
+// EmbedderConfig records which provider and model produced the vectors in an IndexFile.
+type EmbedderConfig struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+}
+
 // IndexFile is the on-disk format combining the structured package index and embedded chunks.
 type IndexFile struct {
 	Packages map[string]*PackageInfo `json:"packages"`
 	Chunks   []Chunk                 `json:"chunks"`
+	Embedder EmbedderConfig          `json:"embedder"`
 }
 
 // Embedder is the interface for converting text to embedding vectors.
@@ -37,14 +44,18 @@ type OpenAIEmbedder struct {
 	model  string
 }
 
-// NewOpenAIEmbedder reads OPENAI_API_KEY from the environment and returns a
-// configured embedder using the text-embedding-3-small model.
+// NewOpenAIEmbedder reads OPENAI_API_KEY and LLM_EMBEDDER_MODEL (default text-embedding-3-small)
+// from the environment and returns a configured embedder.
 func NewOpenAIEmbedder() (*OpenAIEmbedder, error) {
 	key := os.Getenv("OPENAI_API_KEY")
 	if key == "" {
 		return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
 	}
-	return &OpenAIEmbedder{apiKey: key, model: "text-embedding-3-small"}, nil
+	model := os.Getenv("LLM_EMBEDDER_MODEL")
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+	return &OpenAIEmbedder{apiKey: key, model: model}, nil
 }
 
 // Embed sends texts to the OpenAI embeddings API and returns one float32 vector
@@ -105,13 +116,13 @@ type OllamaEmbedder struct {
 }
 
 // NewOllamaEmbedder reads OLLAMA_HOST (default http://localhost:11434) and
-// OLLAMA_MODEL (default nomic-embed-text) from the environment.
+// LLM_EMBEDDER_MODEL (default nomic-embed-text) from the environment.
 func NewOllamaEmbedder() *OllamaEmbedder {
 	host := os.Getenv("OLLAMA_HOST")
 	if host == "" {
 		host = "http://localhost:11434"
 	}
-	model := os.Getenv("OLLAMA_MODEL")
+	model := os.Getenv("LLM_EMBEDDER_MODEL")
 	if model == "" {
 		model = "nomic-embed-text"
 	}
@@ -155,12 +166,13 @@ func (e *OllamaEmbedder) Embed(texts []string) ([][]float32, error) {
 	return result.Embeddings, nil
 }
 
-// NewEmbedder selects an embedder from environment variables.
-// EMBEDDER=openai uses OpenAI (requires OPENAI_API_KEY).
-// EMBEDDER=ollama uses Ollama (OLLAMA_HOST, OLLAMA_MODEL).
-// If EMBEDDER is unset, OpenAI is used when OPENAI_API_KEY is set, otherwise Ollama.
-func NewEmbedder() (Embedder, error) {
-	provider := os.Getenv("EMBEDDER")
+// NewEmbedder selects an embedder from environment variables and returns it alongside
+// its config so the caller can persist provider/model in the index.
+// LLM_PROVIDER=openai uses OpenAI (requires OPENAI_API_KEY).
+// LLM_PROVIDER=ollama uses Ollama (OLLAMA_HOST, LLM_EMBEDDER_MODEL).
+// If LLM_PROVIDER is unset, OpenAI is used when OPENAI_API_KEY is set, otherwise Ollama.
+func NewEmbedder() (Embedder, EmbedderConfig, error) {
+	provider := os.Getenv("LLM_PROVIDER")
 	if provider == "" {
 		if os.Getenv("OPENAI_API_KEY") != "" {
 			provider = "openai"
@@ -170,11 +182,35 @@ func NewEmbedder() (Embedder, error) {
 	}
 	switch provider {
 	case "openai":
+		e, err := NewOpenAIEmbedder()
+		if err != nil {
+			return nil, EmbedderConfig{}, err
+		}
+		return e, EmbedderConfig{Provider: "openai", Model: e.model}, nil
+	case "ollama":
+		e := NewOllamaEmbedder()
+		return e, EmbedderConfig{Provider: "ollama", Model: e.model}, nil
+	default:
+		return nil, EmbedderConfig{}, fmt.Errorf("unknown LLM_PROVIDER %q: use \"openai\" or \"ollama\"", provider)
+	}
+}
+
+// newEmbedderFromConfig recreates an embedder from the config stored in an IndexFile,
+// ensuring query uses the same provider and model that built the index.
+// Falls back to NewEmbedder() for index files written before this field existed.
+func newEmbedderFromConfig(cfg EmbedderConfig) (Embedder, error) {
+	switch cfg.Provider {
+	case "openai":
 		return NewOpenAIEmbedder()
 	case "ollama":
-		return NewOllamaEmbedder(), nil
+		e := NewOllamaEmbedder()
+		if cfg.Model != "" {
+			e.model = cfg.Model
+		}
+		return e, nil
 	default:
-		return nil, fmt.Errorf("unknown EMBEDDER %q: use \"openai\" or \"ollama\"", provider)
+		e, _, err := NewEmbedder()
+		return e, err
 	}
 }
 
@@ -258,9 +294,9 @@ func embedChunks(chunks []Chunk, embedder Embedder) error {
 	return nil
 }
 
-// saveIndex serializes pkgs and chunks into an IndexFile and writes indented JSON to path.
-func saveIndex(path string, pkgs map[string]*PackageInfo, chunks []Chunk) error {
-	data, err := json.MarshalIndent(IndexFile{Packages: pkgs, Chunks: chunks}, "", "  ")
+// saveIndex serializes pkgs, chunks, and the embedder config into an IndexFile and writes indented JSON to path.
+func saveIndex(path string, pkgs map[string]*PackageInfo, chunks []Chunk, cfg EmbedderConfig) error {
+	data, err := json.MarshalIndent(IndexFile{Packages: pkgs, Chunks: chunks, Embedder: cfg}, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -15,11 +15,14 @@ Without any provider, `index` still writes the structured JSON (vectors will be 
 
 | Env var | Effect |
 |---------|--------|
-| `EMBEDDER=openai` | Force OpenAI (requires `OPENAI_API_KEY`) |
-| `EMBEDDER=ollama` | Force Ollama |
+| `LLM_PROVIDER=openai` | Force OpenAI (requires `OPENAI_API_KEY`) |
+| `LLM_PROVIDER=ollama` | Force Ollama |
 | *(unset)* | OpenAI if `OPENAI_API_KEY` is present, else Ollama |
+| `LLM_EMBEDDER_MODEL` | Embedding model name; provider default used if unset (`text-embedding-3-small` / `nomic-embed-text`) |
 | `OLLAMA_HOST` | Ollama base URL (default `http://localhost:11434`) |
-| `OLLAMA_MODEL` | Ollama model name (default `nomic-embed-text`) |
+| `OPENAI_API_KEY` | Required when using OpenAI |
+
+Copy `.env_sample` to `.env` for a starting configuration.
 
 ## Usage
 
