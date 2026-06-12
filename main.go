@@ -73,7 +73,7 @@ func cmdIndex(parsePath string) {
 	chunks := chunksFromIndex(pkgs)
 	fmt.Fprintf(os.Stderr, "Building %d chunks...\n", len(chunks))
 
-	embedder, err := NewOpenAIEmbedder()
+	embedder, err := NewEmbedder()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Skipping embeddings: %v\n", err)
 	} else {
@@ -98,7 +98,7 @@ func cmdQuery(queryText string) {
 		os.Exit(1)
 	}
 
-	embedder, err := NewOpenAIEmbedder()
+	embedder, err := NewEmbedder()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

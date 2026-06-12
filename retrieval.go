@@ -98,6 +98,86 @@ func (e *OpenAIEmbedder) Embed(texts []string) ([][]float32, error) {
 	return vectors, nil
 }
 
+// OllamaEmbedder calls the Ollama /api/embed endpoint (no external deps).
+type OllamaEmbedder struct {
+	host  string
+	model string
+}
+
+// NewOllamaEmbedder reads OLLAMA_HOST (default http://localhost:11434) and
+// OLLAMA_MODEL (default nomic-embed-text) from the environment.
+func NewOllamaEmbedder() *OllamaEmbedder {
+	host := os.Getenv("OLLAMA_HOST")
+	if host == "" {
+		host = "http://localhost:11434"
+	}
+	model := os.Getenv("OLLAMA_MODEL")
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+	return &OllamaEmbedder{host: host, model: model}
+}
+
+// Embed sends texts to the Ollama /api/embed endpoint and returns one float32
+// vector per input in the same order.
+func (e *OllamaEmbedder) Embed(texts []string) ([][]float32, error) {
+	type request struct {
+		Model string   `json:"model"`
+		Input []string `json:"input"`
+	}
+	type response struct {
+		Embeddings [][]float32 `json:"embeddings"`
+	}
+
+	body, _ := json.Marshal(request{Model: e.model, Input: texts})
+	req, err := http.NewRequest("POST", e.host+"/api/embed", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Ollama unreachable at %s: %w", e.host, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errBody map[string]any
+		json.NewDecoder(resp.Body).Decode(&errBody)
+		return nil, fmt.Errorf("Ollama API error %d: %v", resp.StatusCode, errBody)
+	}
+
+	var result response
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result.Embeddings, nil
+}
+
+// NewEmbedder selects an embedder from environment variables.
+// EMBEDDER=openai uses OpenAI (requires OPENAI_API_KEY).
+// EMBEDDER=ollama uses Ollama (OLLAMA_HOST, OLLAMA_MODEL).
+// If EMBEDDER is unset, OpenAI is used when OPENAI_API_KEY is set, otherwise Ollama.
+func NewEmbedder() (Embedder, error) {
+	provider := os.Getenv("EMBEDDER")
+	if provider == "" {
+		if os.Getenv("OPENAI_API_KEY") != "" {
+			provider = "openai"
+		} else {
+			provider = "ollama"
+		}
+	}
+	switch provider {
+	case "openai":
+		return NewOpenAIEmbedder()
+	case "ollama":
+		return NewOllamaEmbedder(), nil
+	default:
+		return nil, fmt.Errorf("unknown EMBEDDER %q: use \"openai\" or \"ollama\"", provider)
+	}
+}
+
 // chunksFromIndex flattens the package index into one Chunk per exported function or type.
 func chunksFromIndex(pkgs map[string]*PackageInfo) []Chunk {
 	var chunks []Chunk

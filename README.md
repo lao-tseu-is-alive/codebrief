@@ -5,7 +5,21 @@ A Go codebase indexer that extracts structural information from Go source files 
 ## Requirements
 
 - Go 1.26+
-- `OPENAI_API_KEY` environment variable (for embeddings and query; indexing without it still produces the structured JSON)
+- An embedding provider (one of):
+  - **OpenAI** (default when `OPENAI_API_KEY` is set) — uses `text-embedding-3-small`
+  - **Ollama** (default when `OPENAI_API_KEY` is unset) — uses `nomic-embed-text` at `http://localhost:11434`
+
+Without any provider, `index` still writes the structured JSON (vectors will be null) and `query` is unavailable.
+
+### Provider selection
+
+| Env var | Effect |
+|---------|--------|
+| `EMBEDDER=openai` | Force OpenAI (requires `OPENAI_API_KEY`) |
+| `EMBEDDER=ollama` | Force Ollama |
+| *(unset)* | OpenAI if `OPENAI_API_KEY` is present, else Ollama |
+| `OLLAMA_HOST` | Ollama base URL (default `http://localhost:11434`) |
+| `OLLAMA_MODEL` | Ollama model name (default `nomic-embed-text`) |
 
 ## Usage
 
@@ -120,7 +134,7 @@ If `OPENAI_API_KEY` is not set, `vector` fields are `null` and `query` is unavai
 codebrief/
   main.go        CLI entry point — index and query subcommands
   indexer.go     AST walking, data types (PackageInfo, Func, TypeInfo, FieldInfo)
-  retrieval.go   Chunk, Embedder interface, OpenAIEmbedder, vector store, cosine similarity
+  retrieval.go   Chunk, Embedder interface, OpenAIEmbedder, OllamaEmbedder, NewEmbedder factory, vector store, cosine similarity
 ```
 
 The `Embedder` interface makes it straightforward to swap in a different provider:
