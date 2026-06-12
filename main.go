@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ const indexFile = "ai-index.json"
 
 // main parses CLI arguments and dispatches to cmdIndex or cmdQuery.
 func main() {
+	loadDotEnv(".env")
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)
@@ -31,6 +33,34 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+}
+
+// loadDotEnv reads KEY=VALUE pairs from path and sets any that are not already
+// present in the environment. Shell exports always take precedence over .env.
+// Missing or unreadable files are silently ignored.
+func loadDotEnv(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if key != "" && os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
+	_ = scanner.Err()
 }
 
 // usage prints available subcommands and their arguments to stderr.
@@ -73,7 +103,7 @@ func cmdIndex(parsePath string) {
 	chunks := chunksFromIndex(pkgs)
 	fmt.Fprintf(os.Stderr, "Building %d chunks...\n", len(chunks))
 
-	embedder, err := NewEmbedder()
+	embedder, cfg, err := NewEmbedder()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Skipping embeddings: %v\n", err)
 	} else {
@@ -82,7 +112,7 @@ func cmdIndex(parsePath string) {
 		}
 	}
 
-	if err := saveIndex(indexFile, pkgs, chunks); err != nil {
+	if err := saveIndex(indexFile, pkgs, chunks, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving index: %v\n", err)
 		os.Exit(1)
 	}
@@ -98,7 +128,7 @@ func cmdQuery(queryText string) {
 		os.Exit(1)
 	}
 
-	embedder, err := NewEmbedder()
+	embedder, err := newEmbedderFromConfig(idx.Embedder)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
