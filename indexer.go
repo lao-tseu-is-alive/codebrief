@@ -43,6 +43,9 @@ type FieldInfo struct {
 	Type string `json:"type"`
 }
 
+// walkPackages recursively walks parsePath, parses every non-vendor .go file,
+// and returns a map keyed by directory path containing each package's functions,
+// types, and deduplicated imports.
 func walkPackages(parsePath string) (map[string]*PackageInfo, error) {
 	fset := token.NewFileSet()
 	pkgs := make(map[string]*PackageInfo)
@@ -162,6 +165,7 @@ func walkPackages(parsePath string) (map[string]*PackageInfo, error) {
 	return pkgs, nil
 }
 
+// exprString uses go/printer to render an AST expression node back to source text.
 func exprString(fset *token.FileSet, expr ast.Expr) string {
 	if expr == nil {
 		return ""
@@ -171,6 +175,8 @@ func exprString(fset *token.FileSet, expr ast.Expr) string {
 	return buf.String()
 }
 
+// fieldListString renders an *ast.FieldList as a parenthesized, comma-separated
+// parameter or result string (e.g. "(ctx context.Context, n int)").
 func fieldListString(fset *token.FileSet, fl *ast.FieldList) string {
 	if fl == nil || len(fl.List) == 0 {
 		return ""
@@ -191,6 +197,8 @@ func fieldListString(fset *token.FileSet, fl *ast.FieldList) string {
 	return "(" + strings.Join(parts, ", ") + ")"
 }
 
+// recvString returns the type string for the first element of a method receiver
+// list (e.g. "*OpenAIEmbedder"), used when building a function signature.
 func recvString(fset *token.FileSet, recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""

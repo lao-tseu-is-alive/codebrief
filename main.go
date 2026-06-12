@@ -8,6 +8,7 @@ import (
 
 const indexFile = "ai-index.json"
 
+// main parses CLI arguments and dispatches to cmdIndex or cmdQuery.
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -32,12 +33,15 @@ func main() {
 	}
 }
 
+// usage prints available subcommands and their arguments to stderr.
 func usage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  codebrief index <parse_path>    # walk and embed a Go codebase, writes ai-index.json")
 	fmt.Fprintln(os.Stderr, "  codebrief query <query_string>  # semantic search over ai-index.json")
 }
 
+// cmdIndex walks parsePath, prints a Markdown summary of all packages to stdout,
+// generates embeddings via OpenAI (if OPENAI_API_KEY is set), and writes ai-index.json.
 func cmdIndex(parsePath string) {
 	pkgs, err := walkPackages(parsePath)
 	if err != nil {
@@ -85,6 +89,8 @@ func cmdIndex(parsePath string) {
 	fmt.Fprintf(os.Stderr, "Saved to %s\n", indexFile)
 }
 
+// cmdQuery loads ai-index.json, embeds queryText via OpenAI, and prints the top-5
+// chunks ranked by cosine similarity.
 func cmdQuery(queryText string) {
 	idx, err := loadIndex(indexFile)
 	if err != nil {

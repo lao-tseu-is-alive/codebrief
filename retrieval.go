@@ -37,6 +37,8 @@ type OpenAIEmbedder struct {
 	model  string
 }
 
+// NewOpenAIEmbedder reads OPENAI_API_KEY from the environment and returns a
+// configured embedder using the text-embedding-3-small model.
 func NewOpenAIEmbedder() (*OpenAIEmbedder, error) {
 	key := os.Getenv("OPENAI_API_KEY")
 	if key == "" {
@@ -45,6 +47,8 @@ func NewOpenAIEmbedder() (*OpenAIEmbedder, error) {
 	return &OpenAIEmbedder{apiKey: key, model: "text-embedding-3-small"}, nil
 }
 
+// Embed sends texts to the OpenAI embeddings API and returns one float32 vector
+// per input in the same order, using net/http with no external dependencies.
 func (e *OpenAIEmbedder) Embed(texts []string) ([][]float32, error) {
 	type request struct {
 		Model string   `json:"model"`
@@ -174,6 +178,7 @@ func embedChunks(chunks []Chunk, embedder Embedder) error {
 	return nil
 }
 
+// saveIndex serializes pkgs and chunks into an IndexFile and writes indented JSON to path.
 func saveIndex(path string, pkgs map[string]*PackageInfo, chunks []Chunk) error {
 	data, err := json.MarshalIndent(IndexFile{Packages: pkgs, Chunks: chunks}, "", "  ")
 	if err != nil {
@@ -182,6 +187,7 @@ func saveIndex(path string, pkgs map[string]*PackageInfo, chunks []Chunk) error 
 	return os.WriteFile(path, data, 0644)
 }
 
+// loadIndex reads and deserializes an IndexFile from the JSON file at path.
 func loadIndex(path string) (*IndexFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -213,6 +219,8 @@ func queryIndex(idx *IndexFile, queryVec []float32, topK int) []Chunk {
 	return result
 }
 
+// cosine returns the cosine similarity between two equal-length float32 vectors.
+// Returns 0 if either vector has zero magnitude.
 func cosine(a, b []float32) float32 {
 	var dot, normA, normB float64
 	for i := range a {
