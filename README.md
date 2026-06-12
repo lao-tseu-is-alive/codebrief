@@ -4,7 +4,7 @@ A Go codebase indexer that extracts structural information from Go source files 
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.26+
 - `OPENAI_API_KEY` environment variable (for embeddings and query; indexing without it still produces the structured JSON)
 
 ## Usage
